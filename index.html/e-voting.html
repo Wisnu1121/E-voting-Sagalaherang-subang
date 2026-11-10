@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Voting Pilkades</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; user-select: none; }
+        .bg-header {
+            background: linear-gradient(to right, #ff4b4b, #d80000);
+        }
+        .candidate-card {
+            transition: all 0.2s ease-in-out;
+        }
+        .candidate-card.selected {
+            border-color: #3b82f6; /* blue-500 */
+            background-color: #eff6ff; /* blue-50 */
+            transform: scale(1.05);
+            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.5);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen w-full flex flex-col overflow-hidden">
+
+    <!-- 1. SCREEN: SCAN BARCODE -->
+    <div id="screen-scan" class="flex flex-col h-full w-full justify-center items-center bg-white z-10 absolute inset-0">
+        <h2 class="text-3xl font-bold mb-4 text-gray-800">Arahkan kamera ke QR code</h2>
+        <p class="text-gray-500 mb-8">Pastikan QR code berada dalam kotak untuk memindai surat undangan.</p>
+        
+        <div id="reader" class="w-[500px] h-[500px] bg-gray-200 rounded-lg overflow-hidden border-4 border-gray-300 shadow-lg"></div>
+        
+        <!-- Tombol manual untuk keperluan testing jika kamera tidak ada -->
+        <button onclick="startVoting('DUMMY-QR-12345')" class="mt-8 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg shadow hover:bg-gray-300 font-semibold">
+            [Simulasi] Lewati Scan & Mulai Memilih
+        </button>
+    </div>
+
+    <!-- 2. SCREEN: SURAT SUARA -->
+    <div id="screen-voting" class="hidden flex-col h-full w-full absolute inset-0 bg-white">
+        <!-- Header -->
+        <div class="bg-header text-white text-center py-6 shadow-md flex items-center justify-center relative">
+            <div class="absolute left-6 w-16 h-16 bg-white rounded-full flex items-center justify-center p-1">
+                <!-- Logo Dummy -->
+                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Logo_of_the_Ministry_of_Home_Affairs_of_the_Republic_of_Indonesia.svg/1024px-Logo_of_the_Ministry_of_Home_Affairs_of_the_Republic_of_Indonesia.svg.png" class="w-full h-full object-contain" alt="Logo">
+            </div>
+            <div>
+                <h1 class="text-3xl font-extrabold tracking-wide">SURAT SUARA</h1>
+                <p class="text-lg font-semibold mt-1 uppercase">Pemilihan Kepala Desa Sukamandi</p>
+                <p class="text-sm opacity-90">Kecamatan Sagalaherang, Kabupaten Subang</p>
+            </div>
+        </div>
+
+        <!-- Kandidat -->
+        <div class="flex-grow flex flex-col items-center justify-center p-8 bg-gray-50">
+            <div class="flex gap-6 justify-center w-full max-w-6xl">
+                <!-- Data Kandidat akan di-render via JS -->
+                <div id="candidates-container" class="flex gap-6 justify-center w-full"></div>
+            </div>
+
+            <!-- Tombol Konfirmasi Bawah -->
+            <div class="mt-12 w-full flex justify-center h-16">
+                <button id="btn-pilih" disabled onclick="showModal()" class="bg-gray-400 text-white font-bold text-xl px-12 py-4 rounded-xl shadow-lg transition-all duration-300 cursor-not-allowed">
+                    PILIH KANDIDAT INI
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. MODAL KONFIRMASI -->
+    <div id="modal-konfirmasi" class="hidden fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-2xl w-[500px] overflow-hidden shadow-2xl transform transition-all">
+            <div class="bg-blue-600 text-white py-4 px-6">
+                <h3 class="text-xl font-bold">Konfirmasi Pemilihan</h3>
+            </div>
+            <div class="p-8 flex flex-col items-center text-center">
+                <p class="text-gray-600 mb-6 text-lg">Apakah Anda yakin akan memilih kandidat ini?</p>
+                
+                <img id="modal-foto" src="" class="w-40 h-48 object-cover rounded-lg border-2 border-gray-200 shadow-sm mb-4">
+                <h4 id="modal-nama" class="text-2xl font-bold text-gray-800">Nama Kandidat</h4>
+                <p class="text-gray-500 font-semibold mb-8">Kandidat No. <span id="modal-nomor">X</span></p>
+
+                <div class="flex gap-4 w-full">
+                    <button onclick="hideModal()" class="flex-1 py-3 font-bold text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors border border-red-200">
+                        ULANGI
+                    </button>
+                    <button onclick="submitVote()" class="flex-1 py-3 font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-lg">
+                        PILIH
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. SCREEN: STRUK AUDIT (RECEIPT) -->
+    <div id="screen-receipt" class="hidden flex-col h-full w-full justify-center items-center bg-gray-100 z-50 absolute inset-0">
+        <h2 class="text-3xl font-bold text-gray-800 mb-8">Memproses Suara Anda...</h2>
+        
+        <!-- Animasi Struk Keluar -->
+        <div class="relative w-80 bg-gray-800 rounded-t-xl h-8 shadow-2xl z-20 flex justify-center">
+            <div class="w-64 h-2 bg-black mt-2 rounded-full"></div>
+        </div>
+        
+        <div id="receipt-paper" class="w-72 bg-white shadow-xl flex flex-col items-center p-6 transform translate-y-[-100%] transition-transform duration-1000 ease-out z-10 border border-gray-200">
+            <div class="w-12 h-12 mb-2">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Logo_of_the_Ministry_of_Home_Affairs_of_the_Republic_of_Indonesia.svg/1024px-Logo_of_the_Ministry_of_Home_Affairs_of_the_Republic_of_Indonesia.svg.png" class="w-full h-full object-contain">
+            </div>
+            <p class="text-[10px] font-bold text-center uppercase leading-tight mb-4 border-b border-dashed border-gray-400 pb-2 w-full">
+                SURAT AUDIT<br>PEMILIHAN KEPALA DESA SUKAMANDI<br>TPS 8 / BILIK 1
+            </p>
+            
+            <div id="qrcode-receipt" class="mb-4"></div>
+            
+            <p class="text-[8px] text-center text-gray-500 break-all w-full font-mono mt-2" id="receipt-hash"></p>
+            <p class="text-[10px] font-bold mt-4">TERIMA KASIH</p>
+        </div>
+        
+        <p class="mt-12 text-gray-600 font-medium text-lg">Silakan ambil struk ini dan masukkan ke kotak audit.</p>
+    </div>
+
+    <script>
+        // Data Kandidat
+        const candidates = [
+            { id: 1, name: "DR. H. MUNAWAR KHALIL, S.T", photo: "https://images.unsplash.com/photo-1560250097-0b93528c311a?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" },
+            { id: 2, name: "AGUS SETIAWAN", photo: "calon2.jpg" },
+            
+        ];
+
+        let selectedCandidate = null;
+        let qrScanner = null;
+        let voterData = null;
+
+        // Inisialisasi Scanner
+        window.onload = () => {
+            initScanner();
+            renderCandidates();
+        };
+
+        function initScanner() {
+            qrScanner = new Html5Qrcode("reader");
+            qrScanner.start(
+                { facingMode: "user" },
+                { fps: 10, qrbox: { width: 300, height: 300 } },
+                (decodedText) => {
+                    qrScanner.stop();
+                    startVoting(decodedText);
+                },
+                (errorMessage) => {
+                    // ignore background errors
+                }
+            ).catch(err => {
+                console.warn("Kamera tidak tersedia. Gunakan tombol simulasi.");
+            });
+        }
+
+        function startVoting(qrData) {
+            voterData = qrData;
+            document.getElementById('screen-scan').classList.add('hidden');
+            document.getElementById('screen-voting').classList.remove('hidden');
+            document.getElementById('screen-voting').classList.add('flex');
+        }
+
+        function renderCandidates() {
+            const container = document.getElementById('candidates-container');
+            container.innerHTML = '';
+            
+            candidates.forEach(c => {
+                const card = document.createElement('div');
+                card.className = `candidate-card flex-1 bg-white border-2 border-gray-200 rounded-xl overflow-hidden cursor-pointer shadow-sm relative pt-10`;
+                card.onclick = () => selectCandidate(c.id);
+                
+                card.innerHTML = `
+                    <div class="absolute top-0 left-0 w-full h-8 bg-gray-100 border-b-2 border-gray-200 flex items-center justify-center">
+                        <span class="font-bold text-gray-700 text-lg">${c.id}</span>
+                    </div>
+                    <div class="p-4 flex flex-col items-center">
+                        <div class="w-32 h-40 bg-gray-200 rounded-md overflow-hidden mb-4 border border-gray-300">
+                            <img src="${c.photo}" alt="${c.name}" class="w-full h-full object-cover">
+                        </div>
+                        <h3 class="text-center font-bold text-sm text-gray-800 leading-tight min-h-[40px]">${c.name}</h3>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function selectCandidate(id) {
+            selectedCandidate = candidates.find(c => c.id === id);
+            
+            // Update UI Cards
+            const cards = document.querySelectorAll('.candidate-card');
+            cards.forEach((card, index) => {
+                if (index + 1 === id) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+            });
+
+            // Aktifkan Tombol
+            const btn = document.getElementById('btn-pilih');
+            btn.disabled = false;
+            btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+            btn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'hover:scale-105');
+        }
+
+        function showModal() {
+            if (!selectedCandidate) return;
+            
+            document.getElementById('modal-foto').src = selectedCandidate.photo;
+            document.getElementById('modal-nama').innerText = selectedCandidate.name;
+            document.getElementById('modal-nomor').innerText = selectedCandidate.id;
+            
+            document.getElementById('modal-konfirmasi').classList.remove('hidden');
+        }
+
+        function hideModal() {
+            document.getElementById('modal-konfirmasi').classList.add('hidden');
+        }
+
+        function submitVote() {
+            hideModal();
+            
+            // Simpan ke LocalStorage (Siap Pakai untuk Simulasi)
+            let perolehan = JSON.parse(localStorage.getItem('perolehan_suara')) || {};
+            perolehan[selectedCandidate.id] = (perolehan[selectedCandidate.id] || 0) + 1;
+            localStorage.setItem('perolehan_suara', JSON.stringify(perolehan));
+
+            // Pindah ke layar struk
+            document.getElementById('screen-voting').classList.add('hidden');
+            document.getElementById('screen-voting').classList.remove('flex');
+            document.getElementById('screen-receipt').classList.remove('hidden');
+            document.getElementById('screen-receipt').classList.add('flex');
+
+            // Generate Struk Animasi
+            setTimeout(() => {
+                document.getElementById('receipt-paper').style.transform = 'translateY(0)';
+                
+                // Generate QR Code Struk Unik
+                const hashStr = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+                document.getElementById('receipt-hash').innerText = hashStr;
+                
+                document.getElementById('qrcode-receipt').innerHTML = '';
+                new QRCode(document.getElementById("qrcode-receipt"), {
+                    text: hashStr,
+                    width: 100,
+                    height: 100,
+                    colorDark : "#000000",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
+                });
+
+                // Reset untuk pemilih berikutnya setelah 7 detik
+                setTimeout(() => {
+                    resetApp();
+                }, 7000);
+
+            }, 500);
+        }
+
+        function resetApp() {
+            window.location.reload();
+        }
+    </script>
+</body>
+</html>
